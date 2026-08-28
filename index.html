@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ほしふる迷宮 — Starfall Labyrinth</title>
+  <meta name="description" content="ランタンを手にした子どもの冒険者ルミが、星が降った夜の城の地下迷宮をどこまでも潜る。ブラウザで遊べるターン制ローグライク。">
+  <meta name="theme-color" content="#0b0a14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0a14'/%3E%3Cpath d='M8 1l1.8 4.6L14.5 6l-3.7 3 1.2 4.9L8 11.3 4 13.9l1.2-4.9L1.5 6l4.7-.4z' fill='%23ffd166'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="hud">
+      <div class="group">
+        <span id="hud-floor">B1F</span>
+        <span id="hud-lv">Lv 1</span>
+      </div>
+      <div class="group hpwrap">
+        <span>HP</span>
+        <div class="bar"><div id="hud-hpbar" class="ok"></div></div>
+        <span id="hud-hp">15/15</span>
+      </div>
+      <div class="group">
+        <span id="hud-str">ちから 8</span>
+        <span id="hud-gold">0 G</span>
+        <span id="hud-turn">T0</span>
+      </div>
+      <div class="group" id="hud-status"></div>
+      <span class="spacer"></span>
+      <span id="hud-equip"></span>
+      <button class="iconbtn" id="hud-help" title="あそびかた (?)">？</button>
+      <button class="iconbtn" id="hud-touch-toggle" title="タッチ操作の表示切替">🎮</button>
+    </header>
+
+    <main id="stage">
+      <canvas id="game" width="640" height="400"></canvas>
+      <div id="log" aria-live="polite"></div>
+      <div id="toast"></div>
+    </main>
+
+    <div id="touch" class="hidden">
+      <div id="dpad" aria-label="方向パッド">
+        <button data-dir="7" aria-label="北西">↖</button>
+        <button data-dir="0" aria-label="北">↑</button>
+        <button data-dir="1" aria-label="北東">↗</button>
+        <button data-dir="6" aria-label="西">←</button>
+        <button data-dir="wait" aria-label="待機">・</button>
+        <button data-dir="2" aria-label="東">→</button>
+        <button data-dir="5" aria-label="南西">↙</button>
+        <button data-dir="4" aria-label="南">↓</button>
+        <button data-dir="3" aria-label="南東">↘</button>
+      </div>
+      <div id="actions">
+        <button data-cmd="attack">攻撃</button>
+        <button data-cmd="fire">矢</button>
+        <button data-cmd="inventory">持ち物</button>
+        <button data-cmd="feet">足元</button>
+        <button data-cmd="dash">ダッシュ</button>
+        <button data-cmd="face">向き</button>
+        <button data-cmd="map">マップ</button>
+        <button data-cmd="log">ログ</button>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------- overlays -->
+    <div id="overlay-title" class="overlay">
+      <div class="panel">
+        <p class="title-sub">STARFALL LABYRINTH</p>
+        <h1 class="title-logo">ほしふる迷宮</h1>
+        <canvas id="title-sprite" width="96" height="96"></canvas>
+        <p class="title-lead">星が降った夜、お城の地下に あらわれた迷宮。<br>ランタンを手に、どこまでも 深く——。</p>
+        <div class="buttons">
+          <button class="btn primary" id="title-new">はじめから</button>
+          <button class="btn" id="title-continue">つづきから</button>
+          <button class="btn" id="title-help">あそびかた</button>
+        </div>
+        <p id="title-record"></p>
+        <p class="title-keys">Enter で開始 ／ ? であそびかた</p>
+      </div>
+    </div>
+
+    <div id="overlay-result" class="overlay hidden">
+      <div class="panel" style="text-align:center">
+        <h2 id="result-title"></h2>
+        <p id="result-cause"></p>
+        <table id="result-table"></table>
+        <span id="result-badge" class="hidden"></span>
+        <div class="buttons">
+          <button class="btn primary" id="result-retry">もういちど</button>
+          <button class="btn" id="result-title-btn">タイトルへ</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="menu" class="overlay hidden">
+      <div class="panel">
+        <h2 id="menu-title"></h2>
+        <ul id="menu-list"></ul>
+        <p id="menu-desc"></p>
+        <p class="menu-footer"></p>
+      </div>
+    </div>
+
+    <div id="dialog" class="overlay hidden">
+      <div class="panel">
+        <p id="dialog-text"></p>
+        <div class="buttons">
+          <button class="btn" id="dialog-yes">はい</button>
+          <button class="btn" id="dialog-no">いいえ</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="overlay-map" class="overlay hidden">
+      <div class="panel">
+        <canvas id="mapcanvas"></canvas>
+        <p class="map-caption"></p>
+        <div class="buttons"><button class="btn close">とじる</button></div>
+      </div>
+    </div>
+
+    <div id="overlay-log" class="overlay hidden">
+      <div class="panel">
+        <h2>メッセージ履歴</h2>
+        <ul id="log-full"></ul>
+        <div class="buttons"><button class="btn close">とじる</button></div>
+      </div>
+    </div>
+
+    <div id="overlay-help" class="overlay hidden">
+      <div class="panel">
+        <h2>あそびかた</h2>
+        <p>「ほしふる迷宮」は、自分が 1 回動くと敵も 1 回動く、ターン制のダンジョン探索ゲームです。
+          階段を降りて、どこまで深く潜れるかを競います。死んでしまうと最初からですが、到達した階とスコアは記録されます。</p>
+        <h3>そうさ（キーボード）</h3>
+        <table>
+          <tr><th>移動</th><td><kbd>矢印</kbd> / <kbd>W A S D</kbd> / <kbd>H J K L</kbd>＋斜め <kbd>Y U B N</kbd> / テンキー。壁の方向へ押すと向きだけ変わります</td></tr>
+          <tr><th>ダッシュ</th><td><kbd>Shift</kbd>＋方向。何か見つかると止まります</td></tr>
+          <tr><th>攻撃・素振り</th><td><kbd>Space</kbd>（向いている方向。何もない床に振ると隠れた罠を見つけられます）</td></tr>
+          <tr><th>待機</th><td><kbd>.</kbd> / <kbd>Z</kbd> / テンキー <kbd>5</kbd></td></tr>
+          <tr><th>持ち物</th><td><kbd>I</kbd>（食べる・読む・ふる・装備・撃つ・投げる・置く）</td></tr>
+          <tr><th>足元</th><td><kbd>G</kbd> / <kbd>Enter</kbd>（拾う・階段を降りる）</td></tr>
+          <tr><th>矢を撃つ</th><td><kbd>F</kbd>（持っている矢を向いている方向へ）</td></tr>
+          <tr><th>向きだけ変える</th><td><kbd>C</kbd> のあとに方向</td></tr>
+          <tr><th>マップ / 履歴</th><td><kbd>M</kbd> / <kbd>X</kbd></td></tr>
+          <tr><th>あそびかた</th><td><kbd>?</kbd></td></tr>
+        </table>
+        <p>スマホでは画面下の方向パッドとボタンで操作できます（🎮 で表示切替）。</p>
+        <h3>迷宮のきほん</h3>
+        <ul>
+          <li><b>HP</b> は歩いていると少しずつ回復します。ピンチのときは「ひかりの実」を食べましょう。</li>
+          <li><b>敵にぶつかる</b>と攻撃します。倒すと経験値がもらえ、レベルが上がると最大 HP が増えます。</li>
+          <li><b>アイテム</b>は上に乗ると拾います。実は食べる／投げる、ページは読む、杖はふって光を当てる、矢は撃つ。投げた実は敵に効きます。</li>
+          <li><b>罠</b>は踏むまで見えません。あやしい床には素振りをして確かめましょう。</li>
+          <li><b>店</b>では値札つきのアイテムを手に取り、店主に話しかけて払います。払わずに店を出ると……。</li>
+          <li><b>モンスターハウス</b>に入ると大量の敵が目を覚まします。逃げるか、ページの力で切り抜けましょう。</li>
+          <li><b>10 階ごと</b>に番人が階段を守っています。倒すと良い装備と金貨が手に入ります。</li>
+          <li>ブラウザを閉じても、冒険は自動で中断セーブされ「つづきから」で再開できます（死ぬと消えます）。</li>
+        </ul>
+        <div class="buttons"><button class="btn primary" id="help-close">とじる</button></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

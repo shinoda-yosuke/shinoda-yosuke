@@ -1,0 +1,521 @@
+// Canvas renderer: tiles, entities, animations, lantern light, minimap.
+import { T, DIRS, cheb } from '../core/util.js';
+import { THEMES } from '../data/themes.js';
+import { ITEMS } from '../data/items.js';
+import { TRAPS } from '../data/traps.js';
+import { MONSTERS } from '../data/monsters.js';
+import { getSprite, getTile } from './sprites.js';
+
+const MOVE_MS = 110;
+const DASH_MS = 55;
+const LUNGE_MS = 160;
+const FX_MS = { heal: 700, sparkle: 600, scroll: 600, thunder: 450, hit: 300, warp: 500, trap: 400, explosion: 550, alert: 900, gold: 600, equip: 400, victory: 1400 };
+
+const FONT = "'DotGothic16', 'Courier New', monospace";
+
+export class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.dpr = 1;
+    this.tileCss = 32;
+    this.tile = 32;
+    this.pos = new Map(); // entity id -> last logical position
+    this.tweens = [];
+    this.lunges = [];
+    this.projs = [];
+    this.fx = [];
+    this.ghosts = [];
+    this.banner = null;
+    this.shakeUntil = 0;
+    this.lockUntil = 0;
+    this.faceHint = true;
+    this.now = performance.now();
+  }
+
+  resize(cssW, cssH) {
+    this.dpr = Math.min(3, window.devicePixelRatio || 1);
+    this.tileCss = cssW < 520 ? 28 : cssW < 900 ? 32 : 36;
+    this.canvas.width = Math.max(1, Math.floor(cssW * this.dpr));
+    this.canvas.height = Math.max(1, Math.floor(cssH * this.dpr));
+    this.canvas.style.width = `${cssW}px`;
+    this.canvas.style.height = `${cssH}px`;
+    this.tile = this.tileCss * this.dpr;
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
+  reset(g) {
+    this.pos.clear();
+    this.tweens = [];
+    this.lunges = [];
+    this.projs = [];
+    this.fx = [];
+    this.ghosts = [];
+    this.lockUntil = 0;
+    if (!g) return;
+    this.pos.set(0, { x: g.player.x, y: g.player.y });
+    for (const m of g.floor.monsters) this.pos.set(m.id, { x: m.x, y: m.y });
+  }
+
+  get busy() {
+    return performance.now() < this.lockUntil;
+  }
+
+  finishAnims() {
+    this.tweens = [];
+    this.lunges = [];
+    this.projs = [];
+    this.lockUntil = 0;
+  }
+
+  /** Schedule animations for the events produced by one action. */
+  applyEvents(g, events, opts = {}) {
+    const now = performance.now();
+    const moveMs = opts.dash ? DASH_MS : MOVE_MS;
+    let cursor = now;
+    let maxEnd = now;
+
+    const floorEv = events.find((e) => e.t === 'floor');
+    if (floorEv) {
+      this.reset(g);
+      const th = THEMES[g.floor.theme];
+      this.banner = { text: `B${floorEv.depth}F`, sub: th.name, t0: now, t1: now + 1500 };
+    } else {
+      const seen = new Set();
+      const ents = [{ id: 0, x: g.player.x, y: g.player.y }];
+      for (const m of g.floor.monsters) ents.push({ id: m.id, x: m.x, y: m.y });
+      for (const e of ents) {
+        seen.add(e.id);
+        const old = this.pos.get(e.id);
+        if (old && (old.x !== e.x || old.y !== e.y) && cheb(old.x, old.y, e.x, e.y) <= 2) {
+          this.tweens.push({ id: e.id, fx: old.x, fy: old.y, tx: e.x, ty: e.y, t0: now, t1: now + moveMs });
+          maxEnd = Math.max(maxEnd, now + moveMs);
+        }
+        this.pos.set(e.id, { x: e.x, y: e.y });
+      }
+      for (const id of [...this.pos.keys()]) if (!seen.has(id)) this.pos.delete(id);
+    }
+
+    for (const ev of events) {
+      switch (ev.t) {
+        case 'attack': {
+          const id = ev.who === 'p' ? 0 : ev.id;
+          this.lunges.push({ id, dir: ev.dir, t0: cursor, t1: cursor + LUNGE_MS });
+          maxEnd = Math.max(maxEnd, cursor + LUNGE_MS);
+          cursor += 70;
+          break;
+        }
+        case 'dmg':
+          this.fx.push({ type: 'text', text: String(ev.n), color: ev.who === 'p' ? '#ff6b6b' : '#ffffff', x: ev.x, y: ev.y, t0: cursor + 40, t1: cursor + 750 });
+          break;
+        case 'miss':
+          this.fx.push({ type: 'text', text: 'miss', color: '#b8c0cc', x: ev.x, y: ev.y, t0: cursor + 40, t1: cursor + 600 });
+          break;
+        case 'proj': {
+          const d = Math.max(1, cheb(ev.fx, ev.fy, ev.tx, ev.ty));
+          const dur = 70 + 32 * d;
+          this.projs.push({ ...ev, t0: cursor, t1: cursor + dur });
+          cursor += dur;
+          maxEnd = Math.max(maxEnd, cursor);
+          break;
+        }
+        case 'die':
+          this.ghosts.push({ kind: ev.kind, x: ev.x, y: ev.y, t0: cursor, t1: cursor + 280 });
+          this.pos.delete(ev.id);
+          cursor += 30;
+          break;
+        case 'fx': {
+          const dur = FX_MS[ev.kind] || 500;
+          this.fx.push({ type: ev.kind, x: ev.x, y: ev.y, t0: cursor, t1: cursor + dur });
+          if (ev.kind === 'explosion') this.shakeUntil = cursor + 320;
+          break;
+        }
+        case 'levelup':
+          this.fx.push({ type: 'text', text: 'LEVEL UP!', color: '#ffd166', x: ev.x, y: ev.y - 0.6, t0: cursor, t1: cursor + 1100, big: true });
+          break;
+        default:
+          break;
+      }
+    }
+    this.lockUntil = Math.max(this.lockUntil, maxEnd);
+  }
+
+  // ------------------------------------------------------------------ helpers
+
+  renderPos(id, lx, ly, now) {
+    let x = lx;
+    let y = ly;
+    for (const tw of this.tweens) {
+      if (tw.id !== id) continue;
+      const k = Math.min(1, Math.max(0, (now - tw.t0) / (tw.t1 - tw.t0)));
+      x = tw.fx + (tw.tx - tw.fx) * k;
+      y = tw.fy + (tw.ty - tw.fy) * k;
+    }
+    for (const lg of this.lunges) {
+      if (lg.id !== id || now < lg.t0) continue;
+      const k = Math.min(1, (now - lg.t0) / (lg.t1 - lg.t0));
+      const a = Math.sin(k * Math.PI) * 0.35;
+      x += DIRS[lg.dir].dx * a;
+      y += DIRS[lg.dir].dy * a;
+    }
+    return { x, y };
+  }
+
+  prune(now) {
+    this.tweens = this.tweens.filter((t) => now < t.t1);
+    this.lunges = this.lunges.filter((t) => now < t.t1);
+    this.projs = this.projs.filter((t) => now < t.t1);
+    this.fx = this.fx.filter((t) => now < t.t1);
+    this.ghosts = this.ghosts.filter((t) => now < t.t1);
+    if (this.banner && now > this.banner.t1) this.banner = null;
+  }
+
+  // --------------------------------------------------------------------- draw
+
+  draw(g, now = performance.now()) {
+    this.now = now;
+    this.prune(now);
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const ts = this.tile;
+    const f = g.floor;
+    const p = g.player;
+    const th = THEMES[f.theme];
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#07060d';
+    ctx.fillRect(0, 0, W, H);
+
+    const pp = this.renderPos(0, p.x, p.y, now);
+    let camX = pp.x + 0.5 - W / ts / 2;
+    let camY = pp.y + 0.5 - H / ts / 2;
+    if (now < this.shakeUntil) {
+      camX += (Math.random() - 0.5) * 0.25;
+      camY += (Math.random() - 0.5) * 0.25;
+    }
+    const toX = (tx) => Math.round((tx - camX) * ts);
+    const toY = (ty) => Math.round((ty - camY) * ts);
+
+    const x0 = Math.floor(camX) - 1;
+    const y0 = Math.floor(camY) - 1;
+    const x1 = Math.ceil(camX + W / ts) + 1;
+    const y1 = Math.ceil(camY + H / ts) + 1;
+
+    // tiles
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
+        const i = ty * f.w + tx;
+        if (!f.explored[i]) continue;
+        const t = f.tiles[i];
+        let img;
+        if (t === T.WALL) {
+          const below = ty + 1 < f.h ? f.tiles[i + f.w] : T.WALL;
+          img = getTile(f.theme, below !== T.WALL && f.explored[i + f.w] ? 'wallFace' : 'wall');
+        } else if (t === T.SHOP) img = getTile(f.theme, 'shop');
+        else if (t === T.CORRIDOR) img = getTile(f.theme, 'corridor');
+        else img = getTile(f.theme, (tx + ty) % 2 === 0 ? 'floorA' : 'floorB');
+        const dx = toX(tx);
+        const dy = toY(ty);
+        ctx.drawImage(img, dx, dy, ts, ts);
+        if (t === T.STAIRS) ctx.drawImage(getSprite('stairs'), dx, dy, ts, ts);
+      }
+    }
+
+    // traps (revealed)
+    for (const tr of f.traps) {
+      if (!tr.visible || !f.explored[tr.y * f.w + tr.x]) continue;
+      ctx.drawImage(getSprite('trap', { tint: TRAPS[tr.id].tint }), toX(tr.x), toY(tr.y), ts, ts);
+    }
+
+    // items
+    for (const e of f.items) {
+      const i = e.y * f.w + e.x;
+      if (!f.explored[i] && !f.lit) continue;
+      const d = ITEMS[e.item.id];
+      ctx.drawImage(getSprite(d.sprite, { tint: d.tint }), toX(e.x), toY(e.y), ts, ts);
+      if (e.item.price) {
+        this.text(ctx, `${e.item.price}G`, toX(e.x) + ts / 2, toY(e.y) + ts * 0.18, ts * 0.32, '#ffd166', true);
+      }
+    }
+
+    // facing hint (tile in front of the player)
+    if (this.faceHint && g.phase === 'play') {
+      const d = DIRS[p.dir];
+      ctx.fillStyle = 'rgba(255,230,160,0.18)';
+      ctx.fillRect(toX(p.x + d.dx) + ts * 0.3, toY(p.y + d.dy) + ts * 0.3, ts * 0.4, ts * 0.4);
+    }
+
+    // monsters
+    for (const m of f.monsters) {
+      const i = m.y * f.w + m.x;
+      if (!f.lit && !f.visible[i]) continue;
+      const def = MONSTERS[m.kind];
+      const rp = this.renderPos(m.id, m.x, m.y, now);
+      const flip = m.dir === 5 || m.dir === 6 || m.dir === 7;
+      const dx = toX(rp.x);
+      const dy = toY(rp.y);
+      if (m.guardian) {
+        ctx.fillStyle = 'rgba(255, 209, 102, 0.18)';
+        ctx.beginPath();
+        ctx.arc(dx + ts / 2, dy + ts * 0.85, ts * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.drawImage(getSprite(def.sprite, { pal: def.pal, flip }), dx, dy, ts, ts);
+      if (m.asleep || m.st.sleep > 0) this.text(ctx, 'z', dx + ts * 0.8, dy + ts * 0.15, ts * 0.4, '#a8dadc');
+      else if (m.st.confuse > 0) this.text(ctx, '?', dx + ts * 0.8, dy + ts * 0.15, ts * 0.4, '#f9a8d4');
+      if (m.hp < m.maxHp) {
+        const w = ts * 0.7;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(dx + ts * 0.15, dy - ts * 0.08, w, ts * 0.08);
+        ctx.fillStyle = m.hp / m.maxHp > 0.5 ? '#57cc99' : m.hp / m.maxHp > 0.25 ? '#ffd166' : '#e63946';
+        ctx.fillRect(dx + ts * 0.15, dy - ts * 0.08, w * (m.hp / m.maxHp), ts * 0.08);
+      }
+    }
+
+    // ghosts (dying)
+    for (const gh of this.ghosts) {
+      const k = (now - gh.t0) / (gh.t1 - gh.t0);
+      if (k < 0) continue;
+      const def = MONSTERS[gh.kind];
+      ctx.globalAlpha = 1 - k;
+      ctx.drawImage(getSprite(def ? def.sprite : 'koropon', { pal: def && def.pal }), toX(gh.x), toY(gh.y - k * 0.4), ts, ts);
+      ctx.globalAlpha = 1;
+    }
+
+    // player
+    {
+      const sprite = p.dir === 0 || p.dir === 1 || p.dir === 7 ? 'lumi_u' : p.dir === 2 || p.dir === 3 ? 'lumi_r' : p.dir === 5 || p.dir === 6 ? 'lumi_r' : 'lumi_d';
+      const flip = p.dir === 5 || p.dir === 6;
+      const dx = toX(pp.x);
+      const dy = toY(pp.y);
+      if (g.phase === 'dead') ctx.globalAlpha = 0.5;
+      ctx.drawImage(getSprite(sprite, { flip }), dx, dy, ts, ts);
+      ctx.globalAlpha = 1;
+      if (p.st.sleep > 0) this.text(ctx, 'z', dx + ts * 0.8, dy + ts * 0.15, ts * 0.4, '#a8dadc');
+      else if (p.st.confuse > 0) this.text(ctx, '?', dx + ts * 0.8, dy + ts * 0.15, ts * 0.4, '#f9a8d4');
+    }
+
+    // dim explored-but-not-visible tiles, and never-seen area stays black
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
+        const i = ty * f.w + tx;
+        if (!f.explored[i] || f.visible[i]) continue;
+        ctx.fillStyle = 'rgba(5,4,12,0.55)';
+        ctx.fillRect(toX(tx), toY(ty), ts, ts);
+      }
+    }
+
+    // lantern light
+    {
+      const cx = toX(pp.x) + ts / 2;
+      const cy = toY(pp.y) + ts / 2;
+      const flicker = 1 + Math.sin(now / 90) * 0.02 + Math.sin(now / 37) * 0.01;
+      const warm = ctx.createRadialGradient(cx, cy, ts * 0.2, cx, cy, ts * 3.2 * flicker);
+      warm.addColorStop(0, 'rgba(255, 200, 120, 0.16)');
+      warm.addColorStop(1, 'rgba(255, 200, 120, 0)');
+      ctx.fillStyle = warm;
+      ctx.fillRect(0, 0, W, H);
+      const dark = ctx.createRadialGradient(cx, cy, ts * 3.5, cx, cy, ts * 9.5);
+      dark.addColorStop(0, 'rgba(0,0,0,0)');
+      dark.addColorStop(1, 'rgba(0,0,0,0.55)');
+      ctx.fillStyle = dark;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // projectiles
+    for (const pr of this.projs) {
+      const k = Math.min(1, Math.max(0, (now - pr.t0) / (pr.t1 - pr.t0)));
+      const x = pr.fx + (pr.tx - pr.fx) * k;
+      const y = pr.fy + (pr.ty - pr.fy) * k;
+      const cx = toX(x) + ts / 2;
+      const cy = toY(y) + ts / 2;
+      if (pr.kind === 'arrow') {
+        ctx.strokeStyle = '#e8d8b0';
+        ctx.lineWidth = Math.max(1, ts * 0.08);
+        const ang = Math.atan2(pr.ty - pr.fy, pr.tx - pr.fx);
+        ctx.beginPath();
+        ctx.moveTo(cx - Math.cos(ang) * ts * 0.35, cy - Math.sin(ang) * ts * 0.35);
+        ctx.lineTo(cx + Math.cos(ang) * ts * 0.35, cy + Math.sin(ang) * ts * 0.35);
+        ctx.stroke();
+      } else if (pr.kind === 'item') {
+        const d = ITEMS[pr.item];
+        if (d) ctx.drawImage(getSprite(d.sprite, { tint: d.tint }), toX(x), toY(y) - ts * 0.3 * Math.sin(k * Math.PI), ts, ts);
+      } else {
+        const col = pr.kind === 'fire' ? '#ff9f43' : pr.kind === 'star' ? '#ffd166' : '#c77dff';
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ts * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, ts * 0.08, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // effects
+    for (const e of this.fx) {
+      if (now < e.t0) continue;
+      const k = Math.min(1, (now - e.t0) / (e.t1 - e.t0));
+      const cx = toX(e.x) + ts / 2;
+      const cy = toY(e.y) + ts / 2;
+      switch (e.type) {
+        case 'text': {
+          const rise = e.big ? ts * 0.9 : ts * 0.7;
+          ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+          this.text(ctx, e.text, cx, cy - ts * 0.35 - rise * k, e.big ? ts * 0.45 : ts * 0.5, e.color, true);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'explosion': {
+          ctx.globalAlpha = 1 - k;
+          ctx.fillStyle = '#ff9f43';
+          ctx.beginPath();
+          ctx.arc(cx, cy, ts * (0.4 + k * 1.4), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff3c4';
+          ctx.beginPath();
+          ctx.arc(cx, cy, ts * (0.2 + k * 0.8), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'thunder': {
+          ctx.globalAlpha = 1 - k;
+          ctx.strokeStyle = '#fff3a0';
+          ctx.lineWidth = Math.max(2, ts * 0.12);
+          ctx.beginPath();
+          ctx.moveTo(cx + ts * 0.2, cy - ts * 2.5);
+          ctx.lineTo(cx - ts * 0.15, cy - ts * 0.8);
+          ctx.lineTo(cx + ts * 0.2, cy - ts * 0.6);
+          ctx.lineTo(cx - ts * 0.1, cy + ts * 0.3);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'heal':
+        case 'sparkle':
+        case 'scroll':
+        case 'gold':
+        case 'equip':
+        case 'victory':
+        case 'warp': {
+          const col = e.type === 'heal' ? '#7cf5b0' : e.type === 'gold' ? '#ffd166' : e.type === 'warp' ? '#7be0ff' : e.type === 'victory' ? '#ffd166' : '#f9a8d4';
+          ctx.fillStyle = col;
+          ctx.globalAlpha = 1 - k;
+          const n = e.type === 'victory' ? 12 : 6;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + k * 2;
+            const r = ts * (0.2 + k * (e.type === 'victory' ? 1.6 : 0.8));
+            ctx.fillRect(cx + Math.cos(a) * r - ts * 0.05, cy + Math.sin(a) * r - ts * 0.05 - k * ts * 0.3, ts * 0.1, ts * 0.1);
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'hit':
+        case 'trap': {
+          ctx.globalAlpha = 1 - k;
+          ctx.strokeStyle = e.type === 'trap' ? '#e63946' : '#ffffff';
+          ctx.lineWidth = Math.max(1, ts * 0.06);
+          ctx.beginPath();
+          ctx.arc(cx, cy, ts * (0.2 + k * 0.5), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'alert': {
+          ctx.globalAlpha = k < 0.8 ? 1 : 1 - (k - 0.8) / 0.2;
+          this.text(ctx, '!', cx, cy - ts * 0.9 - Math.sin(k * Math.PI * 4) * ts * 0.1, ts * 0.9, '#e63946', true);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    this.drawMinimap(g, W, H);
+
+    if (this.banner) {
+      const k = (now - this.banner.t0) / (this.banner.t1 - this.banner.t0);
+      ctx.globalAlpha = k < 0.15 ? k / 0.15 : k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
+      ctx.fillStyle = 'rgba(5,4,12,0.6)';
+      ctx.fillRect(0, H / 2 - ts * 1.3, W, ts * 2.6);
+      this.text(ctx, this.banner.text, W / 2, H / 2 - ts * 0.35, ts * 1.1, '#fff6e5', true);
+      this.text(ctx, this.banner.sub, W / 2, H / 2 + ts * 0.55, ts * 0.5, '#ffd166', true);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  text(ctx, str, x, y, size, color, center = false) {
+    ctx.font = `${Math.round(size)}px ${FONT}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = center ? 'center' : 'left';
+    ctx.lineWidth = Math.max(2, size * 0.18);
+    ctx.strokeStyle = 'rgba(10,8,20,0.9)';
+    ctx.strokeText(str, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(str, x, y);
+  }
+
+  drawMinimap(g, W, H) {
+    const ctx = this.ctx;
+    const f = g.floor;
+    const s = Math.max(3, Math.round(this.dpr * 2.5));
+    const mw = f.w * s;
+    const mh = f.h * s;
+    const ox = W - mw - 8 * this.dpr;
+    const oy = 8 * this.dpr;
+    ctx.fillStyle = 'rgba(5,4,12,0.55)';
+    ctx.fillRect(ox - 3, oy - 3, mw + 6, mh + 6);
+    this.drawMapInto(ctx, g, ox, oy, s, false);
+  }
+
+  /** Shared by the corner minimap and the full-screen map overlay. */
+  drawMapInto(ctx, g, ox, oy, s, detailed) {
+    const f = g.floor;
+    const p = g.player;
+    for (let y = 0; y < f.h; y++) {
+      for (let x = 0; x < f.w; x++) {
+        const i = y * f.w + x;
+        if (!f.explored[i]) continue;
+        const t = f.tiles[i];
+        if (t === T.WALL) {
+          if (detailed) {
+            ctx.fillStyle = 'rgba(120,110,160,0.35)';
+            ctx.fillRect(ox + x * s, oy + y * s, s, s);
+          }
+          continue;
+        }
+        ctx.fillStyle = t === T.SHOP ? 'rgba(255,209,102,0.75)' : t === T.CORRIDOR ? 'rgba(170,165,200,0.55)' : 'rgba(210,205,235,0.75)';
+        if (f.visible[i]) ctx.fillStyle = t === T.SHOP ? '#ffd166' : '#eef';
+        ctx.fillRect(ox + x * s, oy + y * s, s, s);
+        if (t === T.STAIRS) {
+          ctx.fillStyle = '#57cc99';
+          ctx.fillRect(ox + x * s, oy + y * s, s, s);
+        }
+      }
+    }
+    for (const tr of f.traps) {
+      if (!tr.visible) continue;
+      ctx.fillStyle = '#e63946';
+      ctx.fillRect(ox + tr.x * s, oy + tr.y * s, s, s);
+    }
+    for (const e of f.items) {
+      if (!f.explored[e.y * f.w + e.x] && !f.lit) continue;
+      ctx.fillStyle = '#7be0ff';
+      ctx.fillRect(ox + e.x * s, oy + e.y * s, s, s);
+    }
+    for (const m of f.monsters) {
+      if (!f.lit && !f.visible[m.y * f.w + m.x]) continue;
+      ctx.fillStyle = m.keeper && !m.angry ? '#ffd166' : '#ff4d5a';
+      ctx.fillRect(ox + m.x * s - (detailed ? 1 : 0), oy + m.y * s - (detailed ? 1 : 0), s + (detailed ? 2 : 0), s + (detailed ? 2 : 0));
+    }
+    const blink = Math.floor(performance.now() / 300) % 2 === 0;
+    ctx.fillStyle = blink ? '#ffffff' : '#ffd166';
+    ctx.fillRect(ox + p.x * s - 1, oy + p.y * s - 1, s + 2, s + 2);
+  }
+}
