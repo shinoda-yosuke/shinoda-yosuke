@@ -596,3 +596,63 @@ kbd {
     font-size: 30px;
   }
 }
+
+/* ------------------------------------------------- dreams & magic polish */
+#title-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#overlay-title {
+  background: #0a0622;
+}
+
+#overlay-title .panel {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(160deg, rgba(40, 32, 76, 0.92), rgba(20, 15, 44, 0.94));
+  backdrop-filter: blur(2px);
+}
+
+.panel {
+  background: linear-gradient(160deg, rgba(38, 31, 70, 0.97), rgba(22, 17, 44, 0.98));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 36px rgba(139, 92, 246, 0.28), inset 0 0 48px rgba(139, 92, 246, 0.08);
+}
+
+.title-logo {
+  text-shadow: 0 0 18px rgba(255, 209, 102, 0.75), 0 0 40px rgba(255, 160, 220, 0.35), 2px 2px 0 #3a2a00;
+}
+
+.title-sub {
+  color: #c9b8ff;
+}
+
+#hud {
+  background: linear-gradient(90deg, #1c1736, #2a1f4f 50%, #1c1736);
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, rgba(255, 209, 102, 0.1), rgba(255, 209, 102, 0.9), rgba(255, 209, 102, 0.1)) 1;
+}
+
+#hud-floor {
+  text-shadow: 0 0 10px rgba(255, 209, 102, 0.6);
+}
+
+.btn {
+  background: linear-gradient(180deg, #3a3266, #262048);
+}
+
+.btn.primary,
+.btn.focus {
+  background: linear-gradient(180deg, #4d4180, #332a5e);
+  box-shadow: 0 0 14px rgba(255, 209, 102, 0.35);
+}
+
+#menu-list li.sel {
+  background: linear-gradient(90deg, #4a3f7a, #3a3162);
+}
+
+#toast {
+  box-shadow: 0 0 16px rgba(255, 209, 102, 0.3);
+}

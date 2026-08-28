@@ -5,6 +5,7 @@ import { ITEMS } from '../data/items.js';
 import { TRAPS } from '../data/traps.js';
 import { MONSTERS } from '../data/monsters.js';
 import { getSprite, getTile } from './sprites.js';
+import { Cosmos } from './cosmos.js';
 
 const MOVE_MS = 110;
 const DASH_MS = 55;
@@ -31,6 +32,9 @@ export class Renderer {
     this.lockUntil = 0;
     this.faceHint = true;
     this.now = performance.now();
+    this.cosmos = new Cosmos(11);
+    this.motes = [];
+    this.lastNow = 0;
   }
 
   resize(cssW, cssH) {
@@ -79,7 +83,7 @@ export class Renderer {
     if (floorEv) {
       this.reset(g);
       const th = THEMES[g.floor.theme];
-      this.banner = { text: `B${floorEv.depth}F`, sub: th.name, t0: now, t1: now + 1500 };
+      this.banner = { text: `✦ B${floorEv.depth}F ✦`, sub: th.name, t0: now, t1: now + 1500 };
     } else {
       const seen = new Set();
       const ents = [{ id: 0, x: g.player.x, y: g.player.y }];
@@ -184,15 +188,20 @@ export class Renderer {
     const th = THEMES[f.theme];
 
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#07060d';
-    ctx.fillRect(0, 0, W, H);
-
     const pp = this.renderPos(0, p.x, p.y, now);
     let camX = pp.x + 0.5 - W / ts / 2;
     let camY = pp.y + 0.5 - H / ts / 2;
     if (now < this.shakeUntil) {
       camX += (Math.random() - 0.5) * 0.25;
       camY += (Math.random() - 0.5) * 0.25;
+    }
+
+    // dream-space behind the unexplored parts of the map (slow parallax)
+    {
+      const par = 0.08;
+      const padX = Math.ceil(Math.max(W, f.w * ts) * par) + 8;
+      const padY = Math.ceil(Math.max(H, f.h * ts) * par) + 8;
+      this.cosmos.draw(ctx, W, H, now, th, camX * ts * par, camY * ts * par, padX, padY, this.dpr);
     }
     const toX = (tx) => Math.round((tx - camX) * ts);
     const toY = (ty) => Math.round((ty - camY) * ts);
@@ -219,8 +228,22 @@ export class Renderer {
         const dx = toX(tx);
         const dy = toY(ty);
         ctx.drawImage(img, dx, dy, ts, ts);
-        if (t === T.STAIRS) ctx.drawImage(getSprite('stairs'), dx, dy, ts, ts);
       }
+    }
+
+    // stairs: soft pulsing glow (drawn after the tiles so it spills over the neighbours)
+    if (f.stairs && f.explored[f.stairs.y * f.w + f.stairs.x]) {
+      const sx = toX(f.stairs.x);
+      const sy = toY(f.stairs.y);
+      const pulse = 0.28 + 0.14 * Math.sin(now / 480);
+      const gl = ctx.createRadialGradient(sx + ts / 2, sy + ts / 2, ts * 0.1, sx + ts / 2, sy + ts / 2, ts * 1.15);
+      gl.addColorStop(0, `rgba(170, 236, 255, ${pulse})`);
+      gl.addColorStop(1, 'rgba(170, 236, 255, 0)');
+      ctx.fillStyle = gl;
+      ctx.fillRect(sx - ts * 0.7, sy - ts * 0.7, ts * 2.4, ts * 2.4);
+      ctx.drawImage(getSprite('stairs'), sx, sy, ts, ts);
+      const tw = Math.sin(now / 300);
+      if (tw > 0.6) this.sparkle(ctx, sx + ts * 0.5, sy + ts * 0.45, ts * 0.2 * (tw - 0.6) * 2.5, '#eafcff');
     }
 
     // traps (revealed)
@@ -235,6 +258,8 @@ export class Renderer {
       if (!f.explored[i] && !f.lit) continue;
       const d = ITEMS[e.item.id];
       ctx.drawImage(getSprite(d.sprite, { tint: d.tint }), toX(e.x), toY(e.y), ts, ts);
+      const tw = Math.sin(now / 420 + e.x * 7.3 + e.y * 13.1);
+      if (tw > 0.9) this.sparkle(ctx, toX(e.x) + ts * 0.78, toY(e.y) + ts * 0.22, ts * 1.6 * (tw - 0.9), '#fff8d6');
       if (e.item.price) {
         this.text(ctx, `${e.item.price}G`, toX(e.x) + ts / 2, toY(e.y) + ts * 0.18, ts * 0.32, '#ffd166', true);
       }
@@ -303,7 +328,7 @@ export class Renderer {
         if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
         const i = ty * f.w + tx;
         if (!f.explored[i] || f.visible[i]) continue;
-        ctx.fillStyle = 'rgba(5,4,12,0.55)';
+        ctx.fillStyle = 'rgba(14, 8, 40, 0.58)';
         ctx.fillRect(toX(tx), toY(ty), ts, ts);
       }
     }
@@ -314,16 +339,18 @@ export class Renderer {
       const cy = toY(pp.y) + ts / 2;
       const flicker = 1 + Math.sin(now / 90) * 0.02 + Math.sin(now / 37) * 0.01;
       const warm = ctx.createRadialGradient(cx, cy, ts * 0.2, cx, cy, ts * 3.2 * flicker);
-      warm.addColorStop(0, 'rgba(255, 200, 120, 0.16)');
-      warm.addColorStop(1, 'rgba(255, 200, 120, 0)');
+      warm.addColorStop(0, 'rgba(255, 214, 160, 0.2)');
+      warm.addColorStop(1, 'rgba(255, 214, 160, 0)');
       ctx.fillStyle = warm;
       ctx.fillRect(0, 0, W, H);
       const dark = ctx.createRadialGradient(cx, cy, ts * 3.5, cx, cy, ts * 9.5);
-      dark.addColorStop(0, 'rgba(0,0,0,0)');
-      dark.addColorStop(1, 'rgba(0,0,0,0.55)');
+      dark.addColorStop(0, 'rgba(8, 4, 24, 0)');
+      dark.addColorStop(1, 'rgba(8, 4, 24, 0.6)');
       ctx.fillStyle = dark;
       ctx.fillRect(0, 0, W, H);
     }
+
+    this.drawMotes(ctx, g, now, toX, toY, ts);
 
     // projectiles
     for (const pr of this.projs) {
@@ -450,6 +477,60 @@ export class Renderer {
     }
   }
 
+  /** Four-point twinkle. */
+  sparkle(ctx, cx, cy, r, color) {
+    if (r <= 0) return;
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - r, cy - r * 0.18, r * 2, r * 0.36);
+    ctx.fillRect(cx - r * 0.18, cy - r, r * 0.36, r * 2);
+  }
+
+  /** Floating magic dust around the player (render-only, uses Math.random). */
+  drawMotes(ctx, g, now, toX, toY, ts) {
+    const f = g.floor;
+    const p = g.player;
+    const th = THEMES[f.theme];
+    const dt = Math.min(0.1, this.lastNow ? (now - this.lastNow) / 1000 : 0.016);
+    this.lastNow = now;
+    while (this.motes.length < 34) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 1 + Math.random() * 6;
+      this.motes.push({
+        x: p.x + 0.5 + Math.cos(a) * r,
+        y: p.y + 0.5 + Math.sin(a) * r,
+        vy: -(0.12 + Math.random() * 0.2),
+        ph: Math.random() * Math.PI * 2,
+        life: 0,
+        max: 2.5 + Math.random() * 3,
+        c: th.mote[Math.floor(Math.random() * th.mote.length)],
+        s: 0.05 + Math.random() * 0.07,
+      });
+    }
+    for (const m of this.motes) {
+      m.life += dt;
+      m.y += m.vy * dt;
+      m.x += Math.sin(now / 900 + m.ph) * 0.18 * dt;
+    }
+    this.motes = this.motes.filter((m) => m.life < m.max && cheb(m.x, m.y, p.x, p.y) < 12);
+    for (const m of this.motes) {
+      const tx = Math.floor(m.x);
+      const ty = Math.floor(m.y);
+      if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h || !f.explored[ty * f.w + tx]) continue;
+      const k = m.life / m.max;
+      ctx.globalAlpha = Math.sin(k * Math.PI) * 0.9;
+      ctx.fillStyle = m.c;
+      const r = ts * m.s;
+      const cx = toX(m.x);
+      const cy = toY(m.y);
+      ctx.fillRect(cx - r / 2, cy - r / 2, r, r);
+      if (m.s > 0.095) {
+        ctx.fillRect(cx - r, cy - r * 0.15, r * 2, r * 0.3);
+        ctx.fillRect(cx - r * 0.15, cy - r, r * 0.3, r * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   text(ctx, str, x, y, size, color, center = false) {
     ctx.font = `${Math.round(size)}px ${FONT}`;
     ctx.textBaseline = 'middle';
@@ -464,13 +545,16 @@ export class Renderer {
   drawMinimap(g, W, H) {
     const ctx = this.ctx;
     const f = g.floor;
-    const s = Math.max(3, Math.round(this.dpr * 2.5));
+    const s = Math.max(2, Math.round(this.dpr * (this.tileCss < 32 ? 2 : 2.5)));
     const mw = f.w * s;
     const mh = f.h * s;
     const ox = W - mw - 8 * this.dpr;
     const oy = 8 * this.dpr;
-    ctx.fillStyle = 'rgba(5,4,12,0.55)';
-    ctx.fillRect(ox - 3, oy - 3, mw + 6, mh + 6);
+    ctx.fillStyle = 'rgba(12, 8, 32, 0.42)';
+    ctx.fillRect(ox - 4, oy - 4, mw + 8, mh + 8);
+    ctx.strokeStyle = 'rgba(255, 209, 102, 0.35)';
+    ctx.lineWidth = Math.max(1, this.dpr * 0.8);
+    ctx.strokeRect(ox - 4, oy - 4, mw + 8, mh + 8);
     this.drawMapInto(ctx, g, ox, oy, s, false);
   }
 
