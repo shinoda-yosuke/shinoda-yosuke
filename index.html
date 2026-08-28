@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ほしふる迷宮 — Starfall Labyrinth</title>
-  <meta name="description" content="ランタンを手にした子どもの冒険者ルミが、星が降った夜の城の地下迷宮をどこまでも潜る。ブラウザで遊べるターン制ローグライク。">
+  <meta name="description" content="ランタンを手にした子どもの冒険者ルミが、星が降った夜に雲の上へあらわれた迷宮をどこまでも高くのぼる。ブラウザで遊べるターン制ローグライク。">
   <meta name="theme-color" content="#0b0a14">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0a14'/%3E%3Cpath d='M8 1l1.8 4.6L14.5 6l-3.7 3 1.2 4.9L8 11.3 4 13.9l1.2-4.9L1.5 6l4.7-.4z' fill='%23ffd166'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,7 +16,7 @@
   <div id="app">
     <header id="hud">
       <div class="group">
-        <span id="hud-floor">B1F</span>
+        <span id="hud-floor">1F</span>
         <span id="hud-lv">Lv 1</span>
       </div>
       <div class="group hpwrap">
@@ -73,7 +73,7 @@
         <p class="title-sub">STARFALL LABYRINTH</p>
         <h1 class="title-logo">ほしふる迷宮</h1>
         <canvas id="title-sprite" width="96" height="96"></canvas>
-        <p class="title-lead">星が降った夜、お城の地下に あらわれた迷宮。<br>ランタンを手に、どこまでも 深く——。</p>
+        <p class="title-lead">星が降った夜、雲の上に あらわれた迷宮。<br>ランタンを手に、どこまでも 高く——。</p>
         <div class="buttons">
           <button class="btn primary" id="title-new">はじめから</button>
           <button class="btn" id="title-continue">つづきから</button>
@@ -136,7 +136,7 @@
       <div class="panel">
         <h2>あそびかた</h2>
         <p>「ほしふる迷宮」は、自分が 1 回動くと敵も 1 回動く、ターン制のダンジョン探索ゲームです。
-          階段を降りて、どこまで深く潜れるかを競います。死んでしまうと最初からですが、到達した階とスコアは記録されます。</p>
+          階段をのぼって、どこまで高く行けるかを競います。死んでしまうと最初からですが、到達した階とスコアは記録されます。</p>
         <h3>そうさ（キーボード）</h3>
         <table>
           <tr><th>移動</th><td><kbd>矢印</kbd> / <kbd>W A S D</kbd> / <kbd>H J K L</kbd>＋斜め <kbd>Y U B N</kbd> / テンキー。壁の方向へ押すと向きだけ変わります</td></tr>
@@ -144,7 +144,7 @@
           <tr><th>攻撃・素振り</th><td><kbd>Space</kbd>（向いている方向。何もない床に振ると隠れた罠を見つけられます）</td></tr>
           <tr><th>待機</th><td><kbd>.</kbd> / <kbd>Z</kbd> / テンキー <kbd>5</kbd></td></tr>
           <tr><th>持ち物</th><td><kbd>I</kbd>（食べる・読む・ふる・装備・撃つ・投げる・置く）</td></tr>
-          <tr><th>足元</th><td><kbd>G</kbd> / <kbd>Enter</kbd>（拾う・階段を降りる）</td></tr>
+          <tr><th>足元</th><td><kbd>G</kbd> / <kbd>Enter</kbd>（拾う・階段をのぼる）</td></tr>
           <tr><th>矢を撃つ</th><td><kbd>F</kbd>（持っている矢を向いている方向へ）</td></tr>
           <tr><th>向きだけ変える</th><td><kbd>C</kbd> のあとに方向</td></tr>
           <tr><th>マップ / 履歴</th><td><kbd>M</kbd> / <kbd>X</kbd></td></tr>

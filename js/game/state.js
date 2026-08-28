@@ -56,7 +56,7 @@ export function newGame(seed) {
   g.player.weapon = knife.uid;
   g.player.inv.push(createItem(g, 'h_heal'));
   g.player.inv.push(createItem(g, 'a_wood', { count: 8 }));
-  msg(g, '星が降った夜——。ルミは ランタンを手に、お城の地下へ 足を踏み入れた。', 'floor');
+  msg(g, '星が降った夜——。ルミは ランタンを手に、雲の上の迷宮へ 足を踏み入れた。', 'floor');
   enterFloor(g, 1);
   return g;
 }
@@ -77,7 +77,7 @@ export function enterFloor(g, depth, opts = {}) {
   updateFov(g);
   g.events.push({ t: 'floor', depth });
   const th = themeFor(depth);
-  msg(g, opts.fell ? `B${depth}F に 落ちた ── ${th.name}` : `B${depth}F ── ${th.name}`, 'floor');
+  msg(g, opts.fell ? `${depth}F へ 吹き上げられた ── ${th.name}` : `${depth}F ── ${th.name}`, 'floor');
   if (isGuardianFloor(depth)) msg(g, 'この階には 番人の 気配がする……', 'bad');
 }
 
