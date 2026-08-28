@@ -2,6 +2,8 @@
 import { newGame } from './game/state.js';
 import * as Act from './game/actions.js';
 import { Renderer } from './render/renderer.js';
+import { Cosmos } from './render/cosmos.js';
+import { THEMES } from './data/themes.js';
 import { UI, inventoryItems, statusSummary } from './ui/ui.js';
 import { saveGame, loadGame, hasSave, clearSave, loadRecords, recordRun } from './storage.js';
 import { ITEMS, displayName } from './data/items.js';
@@ -18,6 +20,8 @@ class App {
     this.canvas = document.getElementById('game');
     this.stage = document.getElementById('stage');
     this.renderer = new Renderer(this.canvas);
+    this.titleCanvas = document.getElementById('title-bg');
+    this.titleCosmos = new Cosmos(3);
     this.ui = new UI(this);
     this.g = null;
     this.mode = 'title';
@@ -79,11 +83,24 @@ class App {
   resize() {
     const r = this.stage.getBoundingClientRect();
     this.renderer.resize(Math.max(200, Math.floor(r.width)), Math.max(150, Math.floor(r.height)));
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    this.titleCanvas.width = Math.max(1, Math.floor(window.innerWidth * dpr));
+    this.titleCanvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
   }
 
   loop(t) {
+    if (this.mode === 'title') this.drawTitleBg(t);
     if (this.g) this.renderer.draw(this.g, t);
     requestAnimationFrame((tt) => this.loop(tt));
+  }
+
+  /** Slowly drifting starry sky behind the title panel. */
+  drawTitleBg(now) {
+    const c = this.titleCanvas;
+    const ctx = c.getContext('2d');
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const pad = Math.ceil(140 * dpr);
+    this.titleCosmos.draw(ctx, c.width, c.height, now, THEMES[4], Math.sin(now / 23000) * pad * 0.9, Math.cos(now / 29000) * pad * 0.9, pad, pad, dpr);
   }
 
   // ------------------------------------------------------------ game flow
@@ -129,7 +146,7 @@ class App {
     this.ui.lastLogN = 0;
     this.renderer.reset(g);
     if (!resumed) this.renderer.applyEvents(g, g.events);
-    else this.renderer.banner = { text: `B${g.depth}F`, sub: 'つづきから', t0: performance.now(), t1: performance.now() + 1400 };
+    else this.renderer.banner = { text: `✦ B${g.depth}F ✦`, sub: 'つづきから', t0: performance.now(), t1: performance.now() + 1400 };
     g.events.length = 0;
     this.ui.updateHud(g);
     this.ui.updateLog(g);
