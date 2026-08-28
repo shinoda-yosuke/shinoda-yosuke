@@ -146,7 +146,7 @@ class App {
     this.ui.lastLogN = 0;
     this.renderer.reset(g);
     if (!resumed) this.renderer.applyEvents(g, g.events);
-    else this.renderer.banner = { text: `✦ B${g.depth}F ✦`, sub: 'つづきから', t0: performance.now(), t1: performance.now() + 1400 };
+    else this.renderer.banner = { text: `✦ ${g.depth}F ✦`, sub: 'つづきから', t0: performance.now(), t1: performance.now() + 1400 };
     g.events.length = 0;
     this.ui.updateHud(g);
     this.ui.updateLog(g);
@@ -192,7 +192,7 @@ class App {
     this.stopDash();
     switch (pr.type) {
       case 'stairs':
-        this.ui.ask('階段を 降りますか？').then((yes) => {
+        this.ui.ask('階段を のぼりますか？').then((yes) => {
           if (yes) this.act(Act.descend);
         });
         break;
@@ -503,7 +503,7 @@ class App {
     const onStairs = tileAt(f, p.x, p.y) === T.STAIRS;
     const items = [];
     if (e) items.push({ label: `${displayName(e.item)}を 拾う${e.item.price ? `（${e.item.price} 金貨）` : ''}`, desc: ITEMS[e.item.id].desc, value: 'pickup' });
-    if (onStairs) items.push({ label: '階段を 降りる', value: 'descend' });
+    if (onStairs) items.push({ label: '階段を のぼる', value: 'descend' });
     if (tr && tr.visible) items.push({ label: `${TRAPS[tr.id].name}（罠）`, desc: TRAPS[tr.id].desc, disabled: true, value: null });
     if (!items.length) {
       this.ui.toast('足元には 何もない');

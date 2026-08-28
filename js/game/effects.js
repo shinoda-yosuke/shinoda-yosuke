@@ -440,9 +440,8 @@ export function triggerTrap(g, trap) {
   g.events.push({ t: 'fx', kind: 'trap', x: p.x, y: p.y });
   switch (trap.id) {
     case 't_pit': {
-      const dmg = Math.min(5, Math.max(0, p.hp - 1));
-      if (dmg > 0) damagePlayer(g, dmg, 'おとしあな');
-      msg(g, `${p.name}は 穴に 落ちた！`);
+      // legacy id: an updraft that carries you straight up to the next floor
+      msg(g, `${p.name}は つむじ風に 巻き上げられた！`);
       enterFloor(g, g.depth + 1, { fell: true });
       return { fell: true };
     }

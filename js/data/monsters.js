@@ -36,7 +36,7 @@ export const MONSTERS = {
   ibara: {
     name: 'いばらのツル', hp: 18, atk: 5, def: 3, exp: 10, speed: 50, depth: [5, 15], w: 8,
     sprite: 'ibara', ab: ['poisonHit'],
-    desc: '城をおおう茨の一部。トゲには毒があり、ちからを奪う。',
+    desc: '雲の上まで伸びた茨の一部。トゲには毒があり、ちからを奪う。',
   },
   kagami: {
     name: 'かがみゴースト', hp: 14, atk: 7, def: 1, exp: 12, speed: 100, depth: [7, 18], w: 8,
@@ -115,7 +115,7 @@ export const MONSTERS = {
   g_thorn: {
     name: 'いばらのじょおう', hp: 130, atk: 20, def: 9, exp: 300, speed: 100,
     sprite: 'g_thorn', guardian: true, ab: ['poisonHit', 'summon'], summons: ['ibara', 'kasasagi'],
-    desc: '20 階の番人。毒の茨で城を包む。',
+    desc: '20 階の番人。毒の茨で空を包む。',
   },
   g_glass: {
     name: 'ガラスのきし', hp: 180, atk: 28, def: 13, exp: 600, speed: 200,

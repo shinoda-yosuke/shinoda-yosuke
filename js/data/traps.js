@@ -1,6 +1,6 @@
 // Trap definitions. Hidden until stepped on, revealed by swinging at the tile, or by わなけしのページ.
 export const TRAPS = {
-  t_pit: { name: 'おとしあな', depth: [1, 999], w: 8, tint: '#1a1524', desc: '落ちると次の階へ。' },
+  t_pit: { name: 'かぜのわな', depth: [1, 999], w: 8, tint: '#c9f2ff', desc: 'つむじ風に巻き上げられて、次の階へ。' },
   t_poison: { name: 'どくばり', depth: [1, 999], w: 10, tint: '#7b2cbf', desc: '毒の針が刺さり、ちからが下がる。' },
   t_warp: { name: 'ワープのわな', depth: [1, 999], w: 8, tint: '#3a86ff', desc: 'この階のどこかへ飛ばされる。' },
   t_confuse: { name: 'まよいのわな', depth: [2, 999], w: 8, tint: '#f9a8d4', desc: 'しばらく混乱する。' },

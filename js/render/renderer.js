@@ -35,6 +35,7 @@ export class Renderer {
     this.cosmos = new Cosmos(11);
     this.motes = [];
     this.lastNow = 0;
+    this.cloudCache = new Map();
   }
 
   resize(cssW, cssH) {
@@ -83,7 +84,7 @@ export class Renderer {
     if (floorEv) {
       this.reset(g);
       const th = THEMES[g.floor.theme];
-      this.banner = { text: `✦ B${floorEv.depth}F ✦`, sub: th.name, t0: now, t1: now + 1500 };
+      this.banner = { text: `✦ ${floorEv.depth}F ✦`, sub: th.name, t0: now, t1: now + 1500 };
     } else {
       const seen = new Set();
       const ents = [{ id: 0, x: g.player.x, y: g.player.y }];
@@ -211,25 +212,31 @@ export class Renderer {
     const x1 = Math.ceil(camX + W / ts) + 1;
     const y1 = Math.ceil(camY + H / ts) + 1;
 
-    // tiles
+    // walkable sky-stone platforms first, then the cloud sea that surrounds them
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
         const i = ty * f.w + tx;
         if (!f.explored[i]) continue;
         const t = f.tiles[i];
+        if (t === T.WALL) continue;
         let img;
-        if (t === T.WALL) {
-          const below = ty + 1 < f.h ? f.tiles[i + f.w] : T.WALL;
-          img = getTile(f.theme, below !== T.WALL && f.explored[i + f.w] ? 'wallFace' : 'wall');
-        } else if (t === T.SHOP) img = getTile(f.theme, 'shop');
+        if (t === T.SHOP) img = getTile(f.theme, 'shop');
         else if (t === T.CORRIDOR) img = getTile(f.theme, 'corridor');
         else img = getTile(f.theme, (tx + ty) % 2 === 0 ? 'floorA' : 'floorB');
         const dx = toX(tx);
         const dy = toY(ty);
         ctx.drawImage(img, dx, dy, ts, ts);
+        // clouds above cast a soft shadow onto the platform
+        if (ty > 0 && f.tiles[i - f.w] === T.WALL) {
+          ctx.fillStyle = 'rgba(20, 16, 60, 0.28)';
+          ctx.fillRect(dx, dy, ts, ts * 0.12);
+          ctx.fillStyle = 'rgba(20, 16, 60, 0.14)';
+          ctx.fillRect(dx, dy + ts * 0.12, ts, ts * 0.12);
+        }
       }
     }
+    this.drawClouds(ctx, g, now, toX, toY, ts, x0, y0, x1, y1);
 
     // stairs: soft pulsing glow (drawn after the tiles so it spills over the neighbours)
     if (f.stairs && f.explored[f.stairs.y * f.w + f.stairs.x]) {
@@ -477,6 +484,61 @@ export class Renderer {
     }
   }
 
+  /** Pre-rendered cloud puff (2x2 tiles, centred) for a theme / tile size / variant. */
+  cloudPuff(theme, ts, variant) {
+    const key = `${theme.name}|${Math.round(ts * 10)}|${variant}`;
+    let c = this.cloudCache.get(key);
+    if (c) return c;
+    const size = Math.ceil(ts * 2);
+    c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const cx = size / 2;
+    const cy = size / 2;
+    const base = [
+      [0, 0, 0.58],
+      [-0.3, 0.14, 0.36],
+      [0.3, 0.1, 0.4],
+      [0.05, -0.26, 0.34],
+    ];
+    const puffs = base.map(([x, y, r], i) => [
+      x + (((variant * 7 + i * 3) % 5) - 2) * 0.02,
+      y + (((variant * 5 + i * 7) % 5) - 2) * 0.02,
+      r + (((variant + i) % 3) - 1) * 0.03,
+    ]);
+    const pctx = c.getContext('2d');
+    const layer = (color, ox, oy, rs) => {
+      pctx.fillStyle = color;
+      for (const [x, y, r] of puffs) {
+        pctx.beginPath();
+        pctx.arc(cx + x * ts + ox, cy + y * ts + oy, r * ts * rs, 0, Math.PI * 2);
+        pctx.fill();
+      }
+    };
+    layer(theme.cloudShade, 0, ts * 0.1, 1);
+    layer(theme.cloudBase, 0, 0, 1);
+    layer(theme.cloudLight, -ts * 0.06, -ts * 0.1, 0.62);
+    this.cloudCache.set(key, c);
+    return c;
+  }
+
+  /** Explored wall tiles are drawn as a gently bobbing sea of clouds. */
+  drawClouds(ctx, g, now, toX, toY, ts, x0, y0, x1, y1) {
+    const f = g.floor;
+    const th = THEMES[f.theme];
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
+        const i = ty * f.w + tx;
+        if (!f.explored[i] || f.tiles[i] !== T.WALL) continue;
+        const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+        const puff = this.cloudPuff(th, ts, h & 3);
+        const bob = Math.sin(now / 1700 + (h % 628) / 100) * ts * 0.03;
+        ctx.drawImage(puff, toX(tx) - ts * 0.5, toY(ty) - ts * 0.5 + bob);
+      }
+    }
+  }
+
   /** Four-point twinkle. */
   sparkle(ctx, cx, cy, r, color) {
     if (r <= 0) return;
@@ -569,7 +631,7 @@ export class Renderer {
         const t = f.tiles[i];
         if (t === T.WALL) {
           if (detailed) {
-            ctx.fillStyle = 'rgba(120,110,160,0.35)';
+            ctx.fillStyle = 'rgba(225, 230, 255, 0.35)';
             ctx.fillRect(ox + x * s, oy + y * s, s, s);
           }
           continue;

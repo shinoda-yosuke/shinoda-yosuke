@@ -64,7 +64,7 @@ export class UI {
   updateHud(g) {
     const p = g.player;
     const e = this.el;
-    e.hudFloor.textContent = `B${g.depth}F`;
+    e.hudFloor.textContent = `${g.depth}F`;
     e.hudLv.textContent = `Lv ${p.lv}`;
     const ratio = p.maxHp ? p.hp / p.maxHp : 0;
     e.hudHpBar.style.width = `${Math.max(0, Math.min(100, ratio * 100))}%`;
@@ -208,7 +208,7 @@ export class UI {
     t.querySelector('#title-continue').classList.toggle('hidden', !hasSave);
     const best = rec && rec.best;
     t.querySelector('#title-record').textContent = best
-      ? `これまでの記録： 最深 B${best.depth}F ／ 最高スコア ${best.score.toLocaleString()} ／ ${rec.plays} 回の冒険`
+      ? `これまでの記録： 最高 ${best.depth}F ／ 最高スコア ${best.score.toLocaleString()} ／ ${rec.plays} 回の冒険`
       : 'まだ 冒険の記録は ありません';
     const c = t.querySelector('#title-sprite');
     if (c) {
@@ -222,10 +222,10 @@ export class UI {
   renderResult(g, info) {
     const p = g.player;
     const r = this.el.result;
-    r.querySelector('#result-title').textContent = `ルミは B${g.depth}F で たおれた……`;
+    r.querySelector('#result-title').textContent = `ルミは ${g.depth}F で たおれた……`;
     r.querySelector('#result-cause').textContent = g.cause || '';
     const rows = [
-      ['到達した階', `B${p.deepest}F`],
+      ['到達した階', `${p.deepest}F`],
       ['レベル', `${p.lv}`],
       ['たおした敵', `${p.kills}`],
       ['ターン数', `${g.turn}`],
@@ -235,7 +235,7 @@ export class UI {
     r.querySelector('#result-table').innerHTML = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
     const badge = r.querySelector('#result-badge');
     if (info && (info.isNewDepth || info.isNewScore)) {
-      badge.textContent = info.isNewDepth ? '最深記録 更新！' : '最高スコア 更新！';
+      badge.textContent = info.isNewDepth ? '最高到達 更新！' : '最高スコア 更新！';
       badge.classList.remove('hidden');
     } else badge.classList.add('hidden');
     this.showOverlay('result');
@@ -256,7 +256,7 @@ export class UI {
     ctx.fillStyle = '#0b0a14';
     ctx.fillRect(0, 0, c.width, c.height);
     renderer.drawMapInto(ctx, g, 4, 4, s, true);
-    panel.querySelector('.map-caption').textContent = `B${g.depth}F ── 白: 部屋  灰: 通路  緑: 階段  水色: アイテム  赤: 敵/罠  黄: 店`;
+    panel.querySelector('.map-caption').textContent = `${g.depth}F ── 白: 部屋  灰: 通路  緑: 階段  水色: アイテム  赤: 敵/罠  黄: 店`;
     this.showOverlay('map');
   }
 
