@@ -36,6 +36,7 @@ export class Renderer {
     this.motes = [];
     this.lastNow = 0;
     this.cloudCache = new Map();
+    this.fog = null; // per-tile cloud cover over explored-but-unseen tiles (1 = clouded)
   }
 
   resize(cssW, cssH) {
@@ -57,6 +58,7 @@ export class Renderer {
     this.fx = [];
     this.ghosts = [];
     this.lockUntil = 0;
+    this.fog = null;
     if (!g) return;
     this.pos.set(0, { x: g.player.x, y: g.player.y });
     for (const m of g.floor.monsters) this.pos.set(m.id, { x: m.x, y: m.y });
@@ -180,6 +182,8 @@ export class Renderer {
   draw(g, now = performance.now()) {
     this.now = now;
     this.prune(now);
+    const dt = Math.min(0.1, this.lastNow ? (now - this.lastNow) / 1000 : 0.016);
+    this.lastNow = now;
     const ctx = this.ctx;
     const W = this.canvas.width;
     const H = this.canvas.height;
@@ -211,6 +215,8 @@ export class Renderer {
     const y0 = Math.floor(camY) - 1;
     const x1 = Math.ceil(camX + W / ts) + 1;
     const y1 = Math.ceil(camY + H / ts) + 1;
+
+    this.updateFog(g, dt);
 
     // walkable sky-stone platforms first, then the cloud sea that surrounds them
     for (let ty = y0; ty <= y1; ty++) {
@@ -279,6 +285,9 @@ export class Renderer {
       ctx.fillRect(toX(p.x + d.dx) + ts * 0.3, toY(p.y + d.dy) + ts * 0.3, ts * 0.4, ts * 0.4);
     }
 
+    // explored-but-unseen tiles hide under the same clouds as the walls (they part as you approach)
+    this.drawFog(ctx, g, now, toX, toY, ts, x0, y0, x1, y1);
+
     // monsters
     for (const m of f.monsters) {
       const i = m.y * f.w + m.x;
@@ -329,17 +338,6 @@ export class Renderer {
       else if (p.st.confuse > 0) this.text(ctx, '?', dx + ts * 0.8, dy + ts * 0.15, ts * 0.4, '#f9a8d4');
     }
 
-    // dim explored-but-not-visible tiles, and never-seen area stays black
-    for (let ty = y0; ty <= y1; ty++) {
-      for (let tx = x0; tx <= x1; tx++) {
-        if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
-        const i = ty * f.w + tx;
-        if (!f.explored[i] || f.visible[i]) continue;
-        ctx.fillStyle = 'rgba(14, 8, 40, 0.58)';
-        ctx.fillRect(toX(tx), toY(ty), ts, ts);
-      }
-    }
-
     // lantern light
     {
       const cx = toX(pp.x) + ts / 2;
@@ -357,7 +355,7 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
-    this.drawMotes(ctx, g, now, toX, toY, ts);
+    this.drawMotes(ctx, g, now, dt, toX, toY, ts);
 
     // projectiles
     for (const pr of this.projs) {
@@ -522,6 +520,15 @@ export class Renderer {
     return c;
   }
 
+  /** One bobbing cloud puff centred on tile (tx,ty). Leaves ctx.globalAlpha set to `alpha`. */
+  puffAt(ctx, th, ts, tx, ty, now, toX, toY, alpha) {
+    const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+    const puff = this.cloudPuff(th, ts, h & 3);
+    const bob = Math.sin(now / 1700 + (h % 628) / 100) * ts * 0.03;
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(puff, toX(tx) - ts * 0.5, toY(ty) - ts * 0.5 + bob);
+  }
+
   /** Explored wall tiles are drawn as a gently bobbing sea of clouds. */
   drawClouds(ctx, g, now, toX, toY, ts, x0, y0, x1, y1) {
     const f = g.floor;
@@ -531,12 +538,47 @@ export class Renderer {
         if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
         const i = ty * f.w + tx;
         if (!f.explored[i] || f.tiles[i] !== T.WALL) continue;
-        const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
-        const puff = this.cloudPuff(th, ts, h & 3);
-        const bob = Math.sin(now / 1700 + (h % 628) / 100) * ts * 0.03;
-        ctx.drawImage(puff, toX(tx) - ts * 0.5, toY(ty) - ts * 0.5 + bob);
+        this.puffAt(ctx, th, ts, tx, ty, now, toX, toY, 1);
       }
     }
+    ctx.globalAlpha = 1;
+  }
+
+  /** Cloud cover over explored tiles: eases towards 0 where visible, 1 where not. */
+  updateFog(g, dt) {
+    const f = g.floor;
+    const n = f.w * f.h;
+    if (!this.fog || this.fog.length !== n) this.fog = new Float32Array(n).fill(1);
+    const fog = this.fog;
+    const kOpen = 1 - Math.exp(-dt * 9);
+    const kClose = 1 - Math.exp(-dt * 4.5);
+    for (let i = 0; i < n; i++) {
+      const target = f.visible[i] ? 0 : 1;
+      const cur = fog[i];
+      if (cur === target) continue;
+      let v = cur + (target - cur) * (target === 0 ? kOpen : kClose);
+      if (Math.abs(v - target) < 0.01) v = target;
+      fog[i] = v;
+    }
+  }
+
+  /** Same clouds as the walls, laid over explored-but-unseen platforms (with fade). */
+  drawFog(ctx, g, now, toX, toY, ts, x0, y0, x1, y1) {
+    const f = g.floor;
+    const th = THEMES[f.theme];
+    const fog = this.fog;
+    if (!fog) return;
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        if (tx < 0 || ty < 0 || tx >= f.w || ty >= f.h) continue;
+        const i = ty * f.w + tx;
+        if (!f.explored[i] || f.tiles[i] === T.WALL) continue;
+        const a = fog[i];
+        if (a <= 0.01) continue;
+        this.puffAt(ctx, th, ts, tx, ty, now, toX, toY, a);
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** Four-point twinkle. */
@@ -548,12 +590,10 @@ export class Renderer {
   }
 
   /** Floating magic dust around the player (render-only, uses Math.random). */
-  drawMotes(ctx, g, now, toX, toY, ts) {
+  drawMotes(ctx, g, now, dt, toX, toY, ts) {
     const f = g.floor;
     const p = g.player;
     const th = THEMES[f.theme];
-    const dt = Math.min(0.1, this.lastNow ? (now - this.lastNow) / 1000 : 0.016);
-    this.lastNow = now;
     while (this.motes.length < 34) {
       const a = Math.random() * Math.PI * 2;
       const r = 1 + Math.random() * 6;
